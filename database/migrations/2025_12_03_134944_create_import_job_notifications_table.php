@@ -11,17 +11,15 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('product_master_lists', function (Blueprint $table) {
+        Schema::create('import_job_notifications', function (Blueprint $table) {
             $table->id();
             
-            $table->string('product_id');
-            $table->string('types');
-            $table->string('brand');
-            $table->string('model');
-            $table->string('capacity');
-            $table->integer('quantity');
-
-            $table->index('product_id');
+            $table->string('user_id');
+            $table->string('excel_file');
+            $table->string('message_type');
+            $table->string('message');
+            $table->string('status');
+            $table->dateTime('read_at')->nullable();
 
             $table->timestamps();
         });
@@ -32,6 +30,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('product_master_lists');
+        Schema::dropIfExists('import_job_notifications');
     }
 };

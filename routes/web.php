@@ -14,20 +14,7 @@ Route::get('/', function () {
 })->name('home');
 
 Route::get('dashboard', [ProductsController::class, 'index'])->middleware(['auth', 'verified'])->name('dashboard');
-
-
-// Route::get('dashboard', function () {
-//     return Inertia::render('Dashboard', ["product_master_list" => ProductMasterList::all()]);
-// })->middleware(['auth', 'verified'])->name('dashboard');
-
-
-
-
-// Route::get('dashboard', function () {
-//     return Inertia::render('Dashboard', [
-
-//     ]);
-// })->middleware(['auth', 'verified'])->name('dashboard');
+Route::post('update_job_notification', [ProductsController::class, 'updateJobNotification'])->name('update_job_notification');
 
 
 Route::post('upload_excel_products', [ProductsController::class, 'uploadExcel'])->name('upload_excel_products');

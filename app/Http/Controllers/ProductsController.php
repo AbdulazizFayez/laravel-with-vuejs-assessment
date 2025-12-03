@@ -3,14 +3,25 @@
 namespace App\Http\Controllers;
 
 use App\Models\ProductMasterList;
+use App\Models\ImportJobNotification;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
-use App\Jobs\ProcessExcelUpload;
+use App\Jobs\ProcessExcelQueue;
+use Maatwebsite\Excel\Facades\Excel;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Auth;
 
 class ProductsController extends Controller
 {
     public function index(Request $request){
-        $get_products = ProductMasterList::query();
+        
+        $get_products = ProductMasterList::query()->select('product_id', 'brand','model','types', 'capacity', 'quantity');
+        $get_job_notification = ImportJobNotification::where('user_id', Auth::id())
+                       ->where('status', 'complete')                            
+                       ->whereNull('read_at')
+                       ->latest()
+                       ->first();
+
 
         // Server-side search
         if ($search = $request->input('search')) {
@@ -23,13 +34,6 @@ class ProductsController extends Controller
             });
         }
 
-        // // Server-side sorting
-        // if ($sortBy = $request->input('sort_by')) {
-        //     $sortDirection = $request->input('sort_direction', 'asc') === 'desc' ? 'desc' : 'asc';
-        //     $get_products->orderBy($sortBy, $sortDirection);
-        // } else {
-        //     $get_products->orderBy('id', 'desc');
-        // }
 
         // Server-side sorting
         $sortBy = $request->input('sort_by');
@@ -43,7 +47,6 @@ class ProductsController extends Controller
         // Pagination
         $perPage = $request->input('rows_per_page', 5);
         $products = $get_products->paginate($perPage)->withQueryString();
-
         return Inertia::render('Dashboard', [
             'products' => [
                 'data' => $products->items(),
@@ -59,7 +62,8 @@ class ProductsController extends Controller
                 'sort_by' => $request->input('sort_by'),
                 'sort_direction' => $request->input('sort_direction'),
                 'rows_per_page' => $perPage,
-            ]
+            ],
+            'jobMessages' => $get_job_notification
         ]);
 
     }
@@ -78,21 +82,49 @@ class ProductsController extends Controller
 
         if (!$file->isValid()) {
             return back()->withErrors(['excel_file' => 'Invalid file uploaded']);
+            Log::warning("\n Invalid file uploaded\n");
         }  
 
-        //check if Excel headers are according to the epected
-
-
-        // dd($path);
-        ProcessExcelUpload::dispatch(storage_path('app/' . $path));
-        // $batch = ProcessExcelUpload::dispatch($path); // Dispatch the job
+        //check on the excel if is a valid or not:
+        // Excel::toArray returns array of sheets, each sheet is array of rows
+        $sheets = Excel::toArray([], storage_path('app/private/' . $path));
         
-        // return redirect()->back()->with('message', 'File uploaded! Processing in background...');
-        return back()->with('flash', [
-            'message' => 'Excel upload started! Processing in background...'
-        ]);
-        // return response()->json(['message' => 'File uploaded successfully. Processing in background.']);
+        if (empty($sheets) || empty($sheets[0])) {
+            return redirect()->route('dashboard')->with('error', 'The spreadsheet is empty or unreadable');
+            Log::warning("\n The spreadsheet is empty or unreadable\n");
 
-        // return back()->with('success', 'Excel file uploaded! Processing started in background. You’ll see updates soon.');
+        }
+
+        $excel_header = $sheets[0][0];
+        $excel_header_str_loweer = array_map('strtolower', $excel_header);
+        $expected_columns = ['product id', 'types', 'brand', 'model', 'capacity', 'status'];
+
+        $check_if_all_exist = array_diff($expected_columns, $excel_header_str_loweer);
+
+        if(!empty($check_if_all_exist)){
+            return redirect()->route('dashboard')->with('error', 'The Excel header values do not match. Please confirm that excel contains same headers as the table');            
+            Log::warning("\n The Excel header values do not match. Please confirm that excel contains same headers as the table\n");
+
+        }
+
+        $job_notification_id = ImportJobNotification::create([
+            'user_id' => Auth::id(),
+            'excel_file' => storage_path('app/private/' . $path),
+            'message_type' => 'info',
+            'message' => "Job notification created successfully!",
+            'status' => "pending",
+        ]);
+
+        ProcessExcelQueue::dispatch(storage_path('app/private/' . $path), $job_notification_id->id);
+     
+        //Inertia way to return value to vuejs
+        return redirect()->route('dashboard')->with('success', 'Excel file uploaded successfully! Processing in background...');
+    }
+
+    public function updateJobNotification(Request $request)
+    {
+        ImportJobNotification::where('id', $request->id)
+                       ->update(['read_at' => now()]);
+        return;
     }
 }
